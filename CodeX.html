@@ -1,0 +1,234 @@
+import os
+
+# Folder Structure
+base_folder = "CBT_PORTAL"
+templates_folder = os.path.join(base_folder, "templates")
+
+os.makedirs(templates_folder, exist_ok=True)
+
+# ---------------- app.py ----------------
+app_py = """from flask import Flask, render_template, request, send_file
+import pandas as pd
+import os
+from datetime import datetime
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+
+app = Flask(__name__)
+RESULT_FILE = "results.xlsx"
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+@app.route("/save_result", methods=["POST"])
+def save_result():
+    name = request.form["name"]
+    score = float(request.form["score"])
+    total = int(request.form["total"])
+    negative = request.form["negative"]
+    time_taken = request.form["time"]
+
+    percentage = round((score/total)*100,2)
+
+    data = {
+        "Name": name,
+        "Score": score,
+        "Total": total,
+        "Percentage": percentage,
+        "Negative Marking": negative,
+        "Time": time_taken,
+        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    df_new = pd.DataFrame([data])
+
+    if os.path.exists(RESULT_FILE):
+        df_old = pd.read_excel(RESULT_FILE)
+        df = pd.concat([df_old, df_new], ignore_index=True)
+    else:
+        df = df_new
+
+    df.to_excel(RESULT_FILE, index=False)
+
+    pdf_name = f"{name}_Result.pdf"
+    doc = SimpleDocTemplate(pdf_name)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    elements.append(Paragraph("<b>Vidya Kutir CBT Result</b>", styles["Title"]))
+    elements.append(Spacer(1, 0.5 * inch))
+    elements.append(Paragraph(f"Name: {name}", styles["Normal"]))
+    elements.append(Paragraph(f"Score: {score}", styles["Normal"]))
+    elements.append(Paragraph(f"Total Questions: {total}", styles["Normal"]))
+    elements.append(Paragraph(f"Percentage: {percentage}%", styles["Normal"]))
+    elements.append(Paragraph(f"Negative Marking: {negative}", styles["Normal"]))
+    elements.append(Paragraph(f"Time: {time_taken}", styles["Normal"]))
+    elements.append(Paragraph(f"Date: {data['Date']}", styles["Normal"]))
+
+    doc.build(elements)
+
+    return send_file(pdf_name, as_attachment=True)
+
+if __name__ == "__main__":
+    app.run()
+"""
+
+# ---------------- index.html ----------------
+index_html = """<!DOCTYPE html>
+<html>
+<head>
+<title>Vidya Kutir CBT Portal</title>
+<style>
+body{background:black;color:#ff6a00;font-family:Arial;text-align:center;}
+button{background:#ff6a00;padding:10px;border:none;font-weight:bold;}
+input,select{padding:8px;margin:5px;}
+</style>
+</head>
+<body>
+
+<h1>🖤 Vidya Kutir Professional CBT 🧡</h1>
+
+<div id="login">
+<input type="text" id="name" placeholder="Enter Your Name">
+<br><br>
+<label>Negative Marking:</label>
+<select id="negative">
+<option value="No">No</option>
+<option value="Yes">Yes</option>
+</select>
+<br><br>
+<label>Timer (Minutes):</label>
+<input type="number" id="setTime" value="5">
+<br><br>
+<button onclick="startExam()">Start Exam</button>
+</div>
+
+<div id="exam" style="display:none;">
+<h3 id="timer"></h3>
+<h3 id="question"></h3>
+<input type="text" id="answer" placeholder="Type Option (A/B/C/D)">
+<br><br>
+<button onclick="nextQuestion()">Next</button>
+<button onclick="submitExam()">Submit</button>
+</div>
+
+<h2 id="result"></h2>
+
+<script>
+let questions=[
+{q:"1. Law of reflection?",ans:"A"},
+{q:"2. Convex lens sign?",ans:"B"},
+{q:"3. Light is?",ans:"A"}
+];
+
+let current=0;
+let score=0;
+let total=questions.length;
+let timer;
+let timeLeft;
+let studentName;
+
+function startExam(){
+studentName=document.getElementById("name").value;
+if(studentName==""){alert("Enter Name");return;}
+
+document.getElementById("login").style.display="none";
+document.getElementById("exam").style.display="block";
+
+timeLeft=document.getElementById("setTime").value*60;
+startTimer();
+loadQuestion();
+}
+
+function startTimer(){
+timer=setInterval(()=>{
+timeLeft--;
+let min=Math.floor(timeLeft/60);
+let sec=timeLeft%60;
+document.getElementById("timer").innerText="Time: "+min+":"+sec;
+if(timeLeft<=0){
+clearInterval(timer);
+submitExam();
+}
+},1000);
+}
+
+function loadQuestion(){
+if(current>=questions.length){submitExam();return;}
+document.getElementById("question").innerText=questions[current].q;
+}
+
+function nextQuestion(){
+let ans=document.getElementById("answer").value.toUpperCase();
+let negative=document.getElementById("negative").value;
+
+if(ans==questions[current].ans){score++;}
+else if(ans!="" && negative=="Yes"){score-=0.25;}
+
+document.getElementById("answer").value="";
+current++;
+loadQuestion();
+}
+
+function submitExam(){
+clearInterval(timer);
+let percentage=(score/total)*100;
+
+document.getElementById("exam").style.display="none";
+document.getElementById("result").innerHTML=
+"Name: "+studentName+
+"<br>Score: "+score+
+"<br>Percentage: "+percentage.toFixed(2)+"%";
+
+let formData=new FormData();
+formData.append("name",studentName);
+formData.append("score",score);
+formData.append("total",total);
+formData.append("negative",document.getElementById("negative").value);
+formData.append("time",document.getElementById("setTime").value+" Minutes");
+
+fetch("/save_result",{method:"POST",body:formData})
+.then(res=>res.blob())
+.then(blob=>{
+let url=window.URL.createObjectURL(blob);
+let a=document.createElement("a");
+a.href=url;
+a.download=studentName+"_Result.pdf";
+a.click();
+});
+}
+</script>
+
+</body>
+</html>
+"""
+
+requirements = """flask
+pandas
+openpyxl
+reportlab
+gunicorn
+"""
+
+procfile = "web: gunicorn app:app"
+runtime = "python-3.11.6"
+
+# Write files
+with open(os.path.join(base_folder, "app.py"), "w") as f:
+    f.write(app_py)
+
+with open(os.path.join(templates_folder, "index.html"), "w") as f:
+    f.write(index_html)
+
+with open(os.path.join(base_folder, "requirements.txt"), "w") as f:
+    f.write(requirements)
+
+with open(os.path.join(base_folder, "Procfile"), "w") as f:
+    f.write(procfile)
+
+with open(os.path.join(base_folder, "runtime.txt"), "w") as f:
+    f.write(runtime)
+
+print("✅ CBT_PORTAL folder successfully created!")
